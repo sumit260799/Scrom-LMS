@@ -172,6 +172,51 @@ app.post(`${BASE}/upload`, upload.single('file'), async (req, res) => {
 });
 
 app.use(`${BASE}/course`, express.static(TEMP_COURSES));
+app.get(`${BASE}/courses`, async (req, res) => {
+  try {
+    prepareStorage();
+    const directories = fs.readdirSync(TEMP_COURSES);
+
+    const courseList = await Promise.all(
+      directories.map(async courseId => {
+        const coursePath = path.join(TEMP_COURSES, courseId);
+        const csvPath = path.join(coursePath, 'Metadata_File.csv');
+        const manifestPath = path.join(coursePath, 'imsmanifest.xml');
+
+        // Only include if it's a valid course directory
+        if (
+          fs.lstatSync(coursePath).isDirectory() &&
+          fs.existsSync(manifestPath)
+        ) {
+          const metadata = await readMetadata(csvPath);
+
+          // Find the launch file again from the manifest
+          const xml = fs.readFileSync(manifestPath, 'utf-8');
+          const result = await new xml2js.Parser().parseStringPromise(xml);
+          const launchFile =
+            result?.manifest?.resources?.[0]?.resource?.[0]?.$?.href;
+
+          return {
+            courseId,
+            title: metadata.Title || 'Untitled Course',
+            thumbnail:
+              metadata['Thumbnail Image URL'] ||
+              'https://via.placeholder.com/150',
+            publisher: metadata.Publisher || 'Unknown',
+            launchUrl: `${BASE}/player.html?url=${BASE}/course/${courseId}/${launchFile}`,
+          };
+        }
+        return null;
+      })
+    );
+
+    // Filter out any null entries and return
+    res.json(courseList.filter(course => course !== null));
+  } catch (err) {
+    console.error('Error fetching course list:', err);
+    res.status(500).json({error: 'Failed to retrieve courses'});
+  }
+});
 
 const PORT = process.env.PORT || 3044;
 app.listen(PORT, () => console.log(`🚀 Port: ${PORT}`));
