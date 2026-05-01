@@ -18,7 +18,29 @@ cloudinary.config({
 const BASE = '/scorm-lms';
 const app = express();
 
-app.use(cors()); // Ensure your React frontend can talk to the backend
+const allowedOrigins = [
+  process.env.FRONTEND_URL, // Your Vercel frontend URL
+  'http://localhost:5173', // Vite's default local port
+].filter(Boolean); // Removes null/undefined values
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.error(`CORS Error: Origin ${origin} not allowed`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 app.use(express.json());
 
 // Serve static files from public
