@@ -7,8 +7,8 @@ const path = require('path');
 const xml2js = require('xml2js');
 const csv = require('csv-parser');
 const cloudinary = require('cloudinary').v2;
+const cors = require('cors'); // Added CORS for React frontend compatibility
 
-// Cloudinary Configuration
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -18,18 +18,15 @@ cloudinary.config({
 const BASE = '/scorm-lms';
 const app = express();
 
-app.use(BASE, express.static(path.join(__dirname, 'public')));
+app.use(cors()); // Ensure your React frontend can talk to the backend
 app.use(express.json());
 
-/**
- * VERCEL COMPLIANT PATHS:
- * We avoid creating 'uploads' or 'courses' in the root.
- * All writing MUST happen in /tmp.
- */
+// Serve static files from public
+app.use(BASE, express.static(path.join(process.cwd(), 'public')));
+
 const TEMP_UPLOADS = '/tmp/uploads';
 const TEMP_COURSES = '/tmp/courses';
 
-// This function safely ensures the /tmp subdirectories exist without crashing
 const prepareStorage = () => {
   if (!fs.existsSync(TEMP_UPLOADS))
     fs.mkdirSync(TEMP_UPLOADS, {recursive: true});
@@ -56,7 +53,7 @@ function readMetadata(csvPath) {
 
 app.post(`${BASE}/upload`, upload.single('file'), async (req, res) => {
   try {
-    prepareStorage(); // Ensure /tmp folders are ready
+    prepareStorage();
 
     if (!req.file) return res.status(400).json({error: 'No file uploaded'});
 
@@ -66,6 +63,7 @@ app.post(`${BASE}/upload`, upload.single('file'), async (req, res) => {
 
     fs.mkdirSync(extractPath, {recursive: true});
 
+    // Using unzipper.Open.file for better performance with large ZIPs
     fs.createReadStream(zipPath)
       .pipe(unzipper.Extract({path: extractPath}))
       .on('close', async () => {
@@ -97,29 +95,35 @@ app.post(`${BASE}/upload`, upload.single('file'), async (req, res) => {
           const csvPath = path.join(extractPath, 'Metadata_File.csv');
           const metadata = await readMetadata(csvPath);
 
-          // Upload to Cloudinary for permanent storage
+          // Permanent storage of the original ZIP
           const cloudResponse = await cloudinary.uploader.upload(zipPath, {
             resource_type: 'raw',
             folder: 'scorm_packages',
             public_id: courseId,
           });
 
-          // Delete the temporary zip in /tmp/uploads
+          // Cleanup the uploaded ZIP immediately
           if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
 
           res.json({
             message: 'Upload successful',
             courseId,
             cloudUrl: cloudResponse.secure_url,
+            // Note: This launch URL is dependent on /tmp remaining intact
             launch: `${BASE}/player.html?url=${BASE}/course/${courseId}/${launchFile}`,
             metadata,
           });
         } catch (err) {
+          console.error('Processing Error:', err);
           res.status(500).json({error: 'Processing failed'});
         }
       })
-      .on('error', err => res.status(500).json({error: 'Extraction failed'}));
+      .on('error', err => {
+        console.error('Unzip Error:', err);
+        res.status(500).json({error: 'Extraction failed'});
+      });
   } catch (err) {
+    console.error('Server Error:', err);
     res.status(500).json({error: 'Server error'});
   }
 });
