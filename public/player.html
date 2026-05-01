@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SCORM Player</title>
+    <script src="./scorm-api.js"></script>
+</head>
+<body>
+
+<h3>Launching Course...</h3>
+<button id="launchBtn">Click here if course does not start</button>
+
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const courseUrl = urlParams.get("url");
+
+console.log("API in parent:", window.API);
+
+// Function to launch course
+function launchCourse() {
+    if (!courseUrl) {
+        alert("No course URL found");
+        return;
+    }
+
+    const win = window.open(courseUrl, "_blank");
+
+    if (!win) {
+        alert("Popup blocked! Please allow popups for this site.");
+    }
+}
+
+// Auto launch
+window.onload = function () {
+    launchCourse();
+};
+
+// Fallback button
+document.getElementById("launchBtn").onclick = launchCourse;
+</script>
+
+</body>
+</html>
